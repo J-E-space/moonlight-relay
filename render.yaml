@@ -1,0 +1,15 @@
+# 月影云端中继 · Render 部署配置
+#
+# 这个文件让 Render 知道怎么跑我们的服务。
+# 把代码连到 Render 后，它会自动读这个文件。
+
+services:
+  - type: web
+    name: moonlight-heartrate-relay
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: WRITE_TOKEN
+        sync: false   # 暗号不写在这里，在 Render 后台手动设置，更安全
