@@ -52,16 +52,20 @@ def home():
     })
 
 
-@app.route("/push", methods=["POST"])
-def push():
-    """
-    iPhone 调这个上传最新心率。
-    需要带对暗号，body 里给 bpm。
-    """
-    # —— 守门：检查暗号 ——
+# 临时宽松模式：
+#   - True  = 不带 token 也接受（今天先验证全链路通）
+#   - False = 严格守门，必须带对 token
+# 等以后 iPhone App 加上发 token 的代码后，把它改回 False。
+ALLOW_NO_TOKEN = True
+
+
+def _accept_heartrate():
+    """收一条心率的统一逻辑。给 /push 和 /heartrate 两条路径共用。"""
+    # —— 守门（宽松模式下，没 token 也放过）——
     token = request.headers.get("X-Token", "")
-    if not WRITE_TOKEN or token != WRITE_TOKEN:
-        return jsonify({"ok": False, "error": "unauthorized"}), 401
+    if not ALLOW_NO_TOKEN:
+        if not WRITE_TOKEN or token != WRITE_TOKEN:
+            return jsonify({"ok": False, "error": "unauthorized"}), 401
 
     # —— 取 bpm ——
     data = request.get_json(silent=True) or {}
@@ -75,6 +79,18 @@ def push():
     latest["count"] += 1
 
     return jsonify({"ok": True, "bpm": latest["bpm"], "count": latest["count"]})
+
+
+@app.route("/push", methods=["POST"])
+def push():
+    """iPhone 调这个上传最新心率（设计端点）。"""
+    return _accept_heartrate()
+
+
+@app.route("/heartrate", methods=["POST"])
+def heartrate_compat():
+    """兼容 iPhone App 当前版本（它发到 /heartrate）。"""
+    return _accept_heartrate()
 
 
 @app.route("/latest")
