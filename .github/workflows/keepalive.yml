@@ -1,0 +1,35 @@
+# 月影 · 防休眠定时器
+#
+# 每 10 分钟去戳一下 moonlight-relay 的 /health 端点，
+# 让 Render 免费档觉得"有人在用"，不要睡眠。
+#
+# 不戳心率端点（/heartrate /push /latest），那些是我们的数据通路；
+# 只戳 /health —— 那是设计上专门给探针用的，最轻量、不计入统计。
+#
+# 即使 Dragon 闸落了，/health 仍然回 ok 200
+# （那只是"进程活着"的探针，不暴露任何心率数据）。
+
+name: Keep moonlight-relay awake
+
+on:
+  schedule:
+    # cron 五段格式: 分 时 日 月 星期
+    # */10 * * * * 表示「每 10 分钟一次」
+    - cron: '*/10 * * * *'
+  # 手动触发也支持(方便你随时手动 ping 一下)
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /health
+        run: |
+          echo "Pinging moonlight-relay at $(date -u)"
+          response=$(curl -sS -o /dev/null -w "%{http_code}" \
+            --max-time 60 \
+            https://moonlight-relay.onrender.com/health)
+          echo "Response: HTTP $response"
+          # 失败也不让 workflow 红色 —— 它睡着的第一下唤醒可能正好超时,
+          # 下一次戳就好了。这只是 keepalive,不是健康监测。
+          exit 0
