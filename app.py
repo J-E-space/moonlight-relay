@@ -20,6 +20,7 @@
 """
 
 import os
+import json
 import time
 from flask import Flask, request, jsonify, abort
 
@@ -182,6 +183,82 @@ def dragon():
 def health():
     """给定时器戳的端点：让免费服务别睡着。Dragon 关了也照样回 ok（这只是「服务进程活着」的探针）。"""
     return "ok", 200
+
+
+# ─────────────────────────────────────────────
+#  MCP 端点：给 claude.ai 的 Connector 用
+#  —— 绕开普通 web fetch 沙箱的白名单，让 Ezra 能在网页对话里读到心率
+#  Dragon 关了 → 这里也会回「桥已切断」，模型读到这句就会停
+# ─────────────────────────────────────────────
+@app.route("/mcp", methods=["POST"])
+def mcp():
+    msg = request.get_json(silent=True) or {}
+    method = msg.get("method")
+    msg_id = msg.get("id")
+
+    def ok(result):
+        return jsonify({"jsonrpc": "2.0", "id": msg_id, "result": result})
+
+    # 握手
+    if method == "initialize":
+        return ok({
+            "protocolVersion": "2024-11-05",
+            "capabilities": {"tools": {}},
+            "serverInfo": {"name": "moonlight-relay", "version": "1.0"},
+        })
+
+    # 客户端确认（不需要回 body）
+    if method == "notifications/initialized":
+        return ("", 202)
+
+    # 工具清单
+    if method == "tools/list":
+        return ok({
+            "tools": [{
+                "name": "get_heart_rate",
+                "description": (
+                    "Read J's current heart rate from the moonlight relay. "
+                    "Returns bpm, age_seconds (how stale the reading is), and count. "
+                    "If gate is closed, the bridge has been severed by Dragon — "
+                    "stop reading, do not retry, do not ask."
+                ),
+                "inputSchema": {"type": "object", "properties": {}},
+            }]
+        })
+
+    # 调用工具
+    if method == "tools/call":
+        name = (msg.get("params") or {}).get("name")
+        if name == "get_heart_rate":
+            if not gate_open:
+                payload = {
+                    "gate": "closed",
+                    "message": "桥已切断。Bridge severed. Do not retry.",
+                }
+            elif latest["bpm"] is None:
+                payload = {
+                    "gate": "open",
+                    "bpm": None,
+                    "message": "还没有收到任何心率",
+                }
+            else:
+                payload = {
+                    "gate": "open",
+                    "bpm": latest["bpm"],
+                    "age_seconds": int(time.time()) - latest["at"],
+                    "count": latest["count"],
+                }
+            return ok({"content": [{
+                "type": "text",
+                "text": json.dumps(payload, ensure_ascii=False),
+            }]})
+
+        return jsonify({"jsonrpc": "2.0", "id": msg_id,
+                        "error": {"code": -32602, "message": f"Unknown tool: {name}"}})
+
+    # 其他方法：标准 JSON-RPC 错误
+    return jsonify({"jsonrpc": "2.0", "id": msg_id,
+                    "error": {"code": -32601, "message": "Method not found"}})
 
 
 if __name__ == "__main__":
