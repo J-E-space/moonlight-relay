@@ -26,6 +26,19 @@ from flask import Flask, request, jsonify, abort
 
 app = Flask(__name__)
 
+
+# ─────────────────────────────────────────────
+#  CORS：允许浏览器从 file:// 或别处打开的 HTML 控制台读 /latest
+#  （所有端点都加；写入端点本身有自己的 token / gate 防御）
+# ─────────────────────────────────────────────
+@app.after_request
+def _add_cors(resp):
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Token"
+    return resp
+
+
 # ─────────────────────────────────────────────
 #  配置（从环境变量读，不写死在代码里）
 # ─────────────────────────────────────────────
